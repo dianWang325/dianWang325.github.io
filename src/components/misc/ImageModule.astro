@@ -1,0 +1,151 @@
+---
+// ImageModule 对应的 CSS 需要设置为 is::global 才能被正确应用
+
+import { siteConfig } from '@/config';
+import { Image } from "astro:assets";
+import path from "path"
+import { getLqipGradient } from "@utils/getLqipColors";
+
+interface Props {
+    src: string;
+    alt?: string;
+    id?: string;
+    class?: string;
+    width?: number;
+    height?: number;
+    /** 首屏关键图片（文章封面 / 首张卡片封面）：eager + 高优先级，避免被 lazy 拖成 LCP */
+    priority?: boolean;
+}
+
+const { src, alt, id, width, height, priority = false } = Astro.props;
+const className = Astro.props.class;
+
+// 非首屏图片保持 lazy（Astro 的 <Image> 默认就是 lazy）
+const loadingAttrs = priority
+    ? { loading: 'eager' as const, fetchpriority: 'high' as const, decoding: 'async' as const }
+    : { loading: 'lazy' as const, decoding: 'async' as const };
+
+const isLocal = !(
+    src.startsWith("/") ||
+    src.startsWith("http")
+);
+const isPublic = src.startsWith("/");
+
+let imageLoad;
+let lqipGradient = "";
+const enableLQIP = siteConfig.theme.LQIP;
+
+if (isLocal) {
+  // 只收集图片文件！早先这里的 pattern 是 "../../**/*"，会把 src 下的所有文件
+  // （包括 Markdown.astro、markdown.css 等）都变成动态 import，
+  // 结果任何用到 ImageModule 的页面（例如首页）都会被拖上几百 KB 的正文样式。
+  //
+  // caseSensitive: false 只影响 glob 的“发现”阶段：Vite 默认大小写敏感，
+  // 相机导出的 .JPG / .PNG 这类大写后缀会整个漏掉，封面直接变成 undefined。
+  const images = import.meta.glob<ImageMetadata>(
+    "../../**/*.{jpg,jpeg,jfif,png,apng,webp,avif,gif,svg,tiff,tif,bmp,ico,heic}",
+    { import: "default", caseSensitive: false }
+  );
+
+  // 查找仍然严格区分大小写：glob 的 key 用的是磁盘上的真实文件名，
+  // 所以 cover.jpg 与 COVER.JPG 是两个不同文件，frontmatter 写哪个就取哪个，
+  // 大小写写错依旧会报「Image file not found」，不会静默拿到另一个文件。
+  const imagePath = path.normalize(path.join("../../", "/", src)).replace(/\\/g, "/");
+  const imageGetter = images[imagePath];
+
+  if (!imageGetter) {
+    console.error(`\n[ERROR] Image file not found: ${imagePath}`);
+  } else {
+    imageLoad = await imageGetter();
+    // 使用封装好的函数
+    if(enableLQIP) lqipGradient = await getLqipGradient(imageLoad.fsPath);
+  }
+}
+---
+<div 
+  class:list={["image-wrapper", className]} 
+  style={{ "--lqip": lqipGradient }}
+  data-lqip-enabled={enableLQIP}
+>
+    <div class="lqip-bg"></div>
+    {
+        isLocal && imageLoad && (
+        <Image 
+            src={imageLoad} 
+            alt={alt || ""} 
+            id={id} 
+            width={width} 
+            height={height}
+            class=""
+            {...loadingAttrs}
+            onload="this.parentElement.dataset.loaded = 'true'" 
+        />
+        )
+    }
+  
+    {
+        !isLocal && (
+        <img 
+            src={src} 
+            alt={alt || ""} 
+            id={id} 
+            width={width} 
+            height={height} 
+            {...loadingAttrs}
+            class=""
+            onload="this.parentElement.dataset.loaded = 'true'" 
+        />
+        )
+    }
+</div>
+
+<style>
+.image-wrapper {
+    position: relative;
+    overflow: hidden;
+    background-color: transparent;
+    display: block;
+}
+
+.lqip-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--lqip);
+    filter: blur(40px); 
+    transform: scale(1.2); /* 放大一点防止边缘出现白边 */
+    z-index: 0;
+    transition: opacity 0.8s ease;
+}
+
+.image-wrapper img {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    opacity: 0;
+    transition: opacity 0.6s ease-in-out;
+}
+
+/* 图片加载完成后 */
+.image-wrapper[data-loaded="true"] img {
+    opacity: 1;
+}
+
+.image-wrapper[data-loaded="true"][data-lqip-enabled="true"] .lqip-bg {
+    opacity: 0; /* 加载完后隐藏背景层 */
+}
+
+.image-wrapper[data-lqip-enabled="false"] .lqip-bg {
+    display: none; /* 禁用 LQIP 时不显示模糊背景 */
+}
+
+.image-wrapper[data-lqip-enabled="false"] img {
+    opacity: 1; /* 禁用 LQIP 时直接显示图片 */
+}
+</style>

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vLLM-Ascend PCP 交互式执行流程</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb;
+      --surface: #ffffff;
+      --surface-soft: #f0f2f7;
+      --text: #20242c;
+      --muted: #697180;
+      --line: #dce1e9;
+      --primary: #4263eb;
+      --primary-strong: #3451c9;
+      --r0: #4c6ef5;
+      --r1: #12b886;
+      --r2: #f08c00;
+      --r3: #e64980;
+      --shadow: 0 16px 38px rgb(30 40 70 / 8%);
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #111318;
+      --surface: #1a1d24;
+      --surface-soft: #232730;
+      --text: #edf0f5;
+      --muted: #a4abba;
+      --line: #333946;
+      --primary: #91a7ff;
+      --primary-strong: #748ffc;
+      --r0: #91a7ff;
+      --r1: #63e6be;
+      --r2: #ffc078;
+      --r3: #faa2c1;
+      --shadow: none;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body { padding: 18px; font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button { font: inherit; }
+    .walkthrough { width: 100%; min-width: 0; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+    h2 { margin: 0; font-size: clamp(1.15rem, 3vw, 1.45rem); line-height: 1.3; }
+    .version, .step, .detail, .label, .qkv, .code-label, .cache, .bus { color: var(--muted); }
+    .version { font-size: 0.79rem; }
+    .status { display: flex; min-width: 0; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .status > * { min-width: 0; overflow-wrap: anywhere; }
+    .stage-title { font-weight: 650; }
+    .detail { font-size: 0.88rem; }
+    .canvas { position: relative; height: 470px; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }
+    .label { position: absolute; left: 14px; font-size: 0.78rem; opacity: 0; transition: opacity .35s ease; }
+    .label.global { top: 12px; opacity: 1; }
+    .label.gathered, .label.output { top: 380px; }
+    .token { position: absolute; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--r0) 45%, transparent); border-radius: 8px; font-weight: 650; color: var(--text); background: color-mix(in srgb, var(--r0) 18%, var(--surface)); transition: left .65s cubic-bezier(.2,.75,.25,1), top .65s cubic-bezier(.2,.75,.25,1), transform .35s ease, opacity .35s ease, background .35s ease; z-index: 5; }
+    .token[data-rank="1"] { border-color: color-mix(in srgb, var(--r1) 45%, transparent); background: color-mix(in srgb, var(--r1) 18%, var(--surface)); }
+    .token[data-rank="2"] { border-color: color-mix(in srgb, var(--r2) 45%, transparent); background: color-mix(in srgb, var(--r2) 18%, var(--surface)); }
+    .token[data-rank="3"] { border-color: color-mix(in srgb, var(--r3) 45%, transparent); background: color-mix(in srgb, var(--r3) 18%, var(--surface)); }
+    .token.is-computing { transform: scale(1.1); }
+    .token.is-kv { transform: scale(.72); }
+    .chunk-label { position: absolute; color: var(--muted); text-align: center; font-size: .75rem; opacity: 0; transition: opacity .35s ease; }
+    .lane { position: absolute; left: 14px; right: 14px; height: 56px; display: flex; align-items: center; opacity: 0; transform: translateY(6px); transition: opacity .35s ease, transform .35s ease; }
+    .lane-name { width: 62px; flex: none; font-weight: 650; }
+    .lane-line { position: absolute; left: 68px; right: 0; bottom: 3px; height: 5px; border-radius: 99px; background: var(--surface-soft); }
+    .work { position: absolute; left: 68px; bottom: 3px; height: 5px; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--r0), var(--r3)); transition: width .55s ease; }
+    .qkv { margin-left: auto; font-size: .78rem; opacity: 0; transition: opacity .35s ease; }
+    .bus { position: absolute; left: 84px; right: 18px; top: 366px; display: flex; gap: 10px; align-items: center; font-size: .76rem; opacity: 0; transform: translateY(6px); transition: opacity .35s ease, transform .35s ease; }
+    .bus-line { height: 8px; flex: 1; border-radius: 99px; background: linear-gradient(90deg, var(--r0), var(--r1), var(--r2), var(--r3)); }
+    .cache-row { position: absolute; left: 84px; right: 18px; top: 407px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; opacity: 0; transition: opacity .35s ease; }
+    .cache { text-align: center; font-size: .75rem; padding: 5px 2px; background: var(--surface-soft); border-radius: 6px; }
+    .code { min-width: 0; margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; font-size: .79rem; }
+    .code code { max-width: 100%; padding: 2px 6px; border-radius: 5px; background: var(--surface-soft); white-space: normal; overflow-wrap: anywhere; }
+    .controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
+    .btn { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 7px 13px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--surface); cursor: pointer; }
+    .btn:hover:not(:disabled) { border-color: var(--primary); }
+    .btn.primary { border-color: var(--primary); color: white; background: var(--primary-strong); }
+    .btn:disabled { opacity: .42; cursor: not-allowed; }
+    .dots { display: flex; gap: 7px; align-items: center; }
+    .dot { width: 8px; height: 8px; border-radius: 99px; background: var(--line); transition: transform .2s ease, background .2s ease; }
+    .dot.current { background: var(--primary); transform: scale(1.35); }
+    .walkthrough[data-stage="1"] .chunk-label { opacity: 1; }
+    .walkthrough[data-stage="2"] .lane, .walkthrough[data-stage="3"] .lane, .walkthrough[data-stage="4"] .lane, .walkthrough[data-stage="5"] .lane { opacity: 1; transform: none; }
+    .walkthrough[data-stage="3"] .qkv { opacity: 1; }
+    .walkthrough[data-stage="3"] .work { width: 74%; }
+    .walkthrough[data-stage="4"] .bus, .walkthrough[data-stage="4"] .cache-row { opacity: 1; transform: none; }
+    .walkthrough[data-stage="5"] .label.gathered, .walkthrough[data-stage="6"] .label.output { opacity: 1; }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    @media (max-width: 520px) {
+      body { padding: 12px; }
+      .canvas { height: 500px; }
+      .token { width: 28px; height: 32px; border-radius: 7px; font-size: .85rem; }
+      .lane-name { width: 50px; }
+      .lane-line, .work { left: 54px; }
+      .bus { left: 68px; top: 386px; }
+      .cache-row { left: 68px; top: 428px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .label.gathered, .label.output { top: 416px; }
+      .code { display: block; }
+      .code > * { display: block; margin-bottom: 4px; }
+      .controls { display: grid; grid-template-columns: 1fr 1fr; grid-template-areas: "prev next" "dots dots"; width: 100%; }
+      [data-action="prev"] { grid-area: prev; justify-self: start; }
+      [data-action="next"] { grid-area: next; justify-self: end; }
+      .dots { grid-area: dots; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <main class="walkthrough" id="pcp-walkthrough" data-stage="0">
+    <div class="header">
+      <h2>Ascend PCP：逐步看清真实执行路径</h2>
+      <span class="version">vllm-ascend main @ 908273b · 2026-10-15</span>
+    </div>
+    <div class="status" aria-live="polite">
+      <span class="step">步骤 <span data-role="step">1</span>/7</span>
+      <span class="stage-title" data-role="title">MRV2 保留全局 InputBatch</span>
+      <span class="detail" data-role="detail">示例：PCP=4，一条 16-token Prefill 请求。</span>
+    </div>
+    <div class="canvas" data-role="canvas" role="img" aria-label="vLLM Ascend Model Runner V2 中 PCP 的七步交互演示">
+      <span class="label global">scheduler 的全局 token 顺序</span>
+      <span class="label gathered">AllGather 后：按 rank 拼接，顺序仍是乱的</span>
+      <span class="label output">hidden_restore_idx 后：恢复全局 token 顺序</span>
+      <div data-role="chunk-labels"></div><div data-role="tokens"></div>
+      <div class="lane" style="top:92px"><span class="lane-name">Rank 0</span><span class="lane-line"></span><span class="work"></span><span class="qkv">本地 Q/K/V</span></div>
+      <div class="lane" style="top:158px"><span class="lane-name">Rank 1</span><span class="lane-line"></span><span class="work"></span><span class="qkv">本地 Q/K/V</span></div>
+      <div class="lane" style="top:224px"><span class="lane-name">Rank 2</span><span class="lane-line"></span><span class="work"></span><span class="qkv">本地 Q/K/V</span></div>
+      <div class="lane" style="top:290px"><span class="lane-name">Rank 3</span><span class="lane-line"></span><span class="work"></span><span class="qkv">本地 Q/K/V</span></div>
+      <div class="bus"><span>PCP AllGather</span><span class="bus-line"></span><span>写入全局 slot</span></div>
+      <div class="cache-row" aria-label="PCP-only 模式下每个 rank 的完整 KV cache 副本"><span class="cache">R0 完整 KV</span><span class="cache">R1 完整 KV</span><span class="cache">R2 完整 KV</span><span class="cache">R3 完整 KV</span></div>
+    </div>
+    <div class="code"><span class="code-label">当前代码：</span><code data-role="code-file">worker/v2/model_runner.py</code><code data-role="code-symbol">_prepare_inputs_impl()</code></div>
+    <div class="controls">
+      <button type="button" class="btn" data-action="prev" aria-label="上一步"><span aria-hidden="true">←</span><span>上一步</span></button>
+      <div class="dots" data-role="dots" aria-label="步骤进度"></div>
+      <button type="button" class="btn primary" data-action="next" aria-label="下一步"><span>下一步</span><span aria-hidden="true">→</span></button>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const root = document.getElementById('pcp-walkthrough');
+      const canvas = root.querySelector('[data-role="canvas"]');
+      const tokenHost = root.querySelector('[data-role="tokens"]');
+      const chunkHost = root.querySelector('[data-role="chunk-labels"]');
+      const prev = root.querySelector('[data-action="prev"]');
+      const next = root.querySelector('[data-action="next"]');
+      const rankOrder = [0,1,14,15,2,3,12,13,4,5,10,11,6,7,8,9];
+      const rankOf = i => i < 2 ? 0 : i < 4 ? 1 : i < 6 ? 2 : i < 10 ? 3 : i < 12 ? 2 : i < 14 ? 1 : 0;
+      const steps = [
+        ['MRV2 保留全局 InputBatch','scheduler 的 batch 不被破坏；PCPManager 只构造本步的 rank-local 视图。','worker/v2/model_runner.py','_prepare_inputs_impl()'],
+        ['DualChunkSwap：切成 2P 段','PCP=4 → 8 段；Rank r 领取 chunk r 与 chunk 7-r。','vllm/v1/worker/gpu/pcp_manager.py','PCPManager._iter_rank_chunks()'],
+        ['partition_batch 构造本地输入','input_ids、positions、request rows、block tables 与 slot mappings 都变成 rank-local。','worker/v2/pcp_manager.py','AscendPCPManager.partition_batch()'],
+        ['各 Rank 并行执行模型','每个 Rank 只为自己的 token 计算 Q/K/V；首尾配对让因果注意力负载更均衡。','worker/v2/model_runner.py','execute_model() → model forward'],
+        ['Prefill K/V 在 PCP 组内同步','以 SFA 为例：本地 K/V 打包后 AllGather，再按 global slot 写入；PCP-only 时每个 Rank 最终拥有完整 KV 副本。','attention/context_parallel/sfa_cp.py','_fused_preprocess_with_pcp_kv()'],
+        ['Hidden states 先做 AllGather','通信结果按 rank 顺序拼接，因此此时还不是原始 token 顺序。','vllm/v1/worker/gpu/pcp_manager.py','restore_hidden_states(): all_gather()'],
+        ['hidden_restore_idx 恢复全局顺序','恢复后的 hidden states 与原 global InputBatch 对齐，再进入 logits、sampling 与后处理。','vllm/v1/worker/gpu/pcp_manager.py','gathered[self._hidden_restore_idx]']
+      ];
+      let stage = 0;
+
+      for (let i = 0; i < 16; i++) {
+        const token = document.createElement('span');
+        token.className = 'token'; token.dataset.index = String(i); token.dataset.rank = String(rankOf(i)); token.textContent = String(i + 1);
+        token.setAttribute('aria-label', `token ${i + 1}，分配给 Rank ${rankOf(i)}`); tokenHost.appendChild(token);
+      }
+      for (let i = 0; i < 8; i++) { const label = document.createElement('span'); label.className = 'chunk-label'; label.textContent = `C${i}`; chunkHost.appendChild(label); }
+      steps.forEach((_, i) => { const dot = document.createElement('span'); dot.className = 'dot'; dot.setAttribute('aria-label', `第 ${i + 1} 步`); root.querySelector('[data-role="dots"]').appendChild(dot); });
+
+      function syncTheme() {
+        try { document.documentElement.dataset.theme = window.parent.document.documentElement.dataset.theme || 'light'; }
+        catch (_) { document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+      }
+      syncTheme();
+      try { new MutationObserver(syncTheme).observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (_) {}
+
+      function geometry() {
+        const w = canvas.clientWidth, compact = w < 520, tw = compact ? 28 : 34, gap = compact ? 4 : 7, left = compact ? 14 : 18, usable = Math.max(250, w - left * 2), natural = tw + gap, laneX = compact ? 66 : 90, laneY = compact ? [108,176,244,312] : [104,170,236,302];
+        const original = [];
+        if (w >= 650) { const fitted = Math.max(1, Math.min(gap, (usable - tw * 16) / 15)); for (let i = 0; i < 16; i++) original.push({ left: left + i * (tw + fitted), top: 42 }); }
+        else { for (let i = 0; i < 16; i++) original.push({ left: left + (i % 8) * natural, top: 40 + Math.floor(i / 8) * 38 }); }
+        const local = [];
+        for (let i = 0; i < 16; i++) { const rank = rankOf(i), members = [...Array(16).keys()].filter(j => rankOf(j) === rank); local.push({ left: laneX + members.indexOf(i) * natural, top: laneY[rank] }); }
+        const gathered = [];
+        rankOrder.forEach((tokenIndex, pos) => { if (w >= 650) { const fitted = Math.max(1, Math.min(gap, (usable - tw * 16) / 15)); gathered[tokenIndex] = { left: left + pos * (tw + fitted), top: 410 }; } else gathered[tokenIndex] = { left: left + (pos % 8) * natural, top: 440 + Math.floor(pos / 8) * 34 }; });
+        const output = original.map((p, i) => w >= 650 ? { left: p.left, top: 410 } : { left: p.left, top: 440 + Math.floor(i / 8) * 34 });
+        return { original, local, gathered, output, tw };
+      }
+      function draw() {
+        const s = steps[stage], g = geometry();
+        root.dataset.stage = String(stage); root.querySelector('[data-role="step"]').textContent = String(stage + 1); root.querySelector('[data-role="title"]').textContent = s[0]; root.querySelector('[data-role="detail"]').textContent = s[1]; root.querySelector('[data-role="code-file"]').textContent = s[2]; root.querySelector('[data-role="code-symbol"]').textContent = s[3];
+        prev.disabled = stage === 0; next.querySelector('span').textContent = stage === steps.length - 1 ? '重新开始' : '下一步';
+        [...root.querySelectorAll('.dot')].forEach((dot, i) => dot.classList.toggle('current', i === stage));
+        [...chunkHost.children].forEach((label, chunk) => { const first = g.original[chunk * 2], second = g.original[chunk * 2 + 1]; label.style.left = `${first.left}px`; label.style.top = `${Math.min(first.top, second.top) - 24}px`; label.style.width = `${second.left - first.left + g.tw}px`; });
+        [...tokenHost.children].forEach((token, i) => { let p = g.original[i]; if (stage >= 2 && stage <= 4) p = g.local[i]; else if (stage === 5) p = g.gathered[i]; else if (stage === 6) p = g.output[i]; token.style.left = `${p.left}px`; token.style.top = `${p.top}px`; token.classList.toggle('is-computing', stage === 3); token.classList.toggle('is-kv', stage === 4); });
+      }
+      prev.addEventListener('click', () => { if (stage > 0) { stage--; draw(); } });
+      next.addEventListener('click', () => { stage = stage === steps.length - 1 ? 0 : stage + 1; draw(); });
+      new ResizeObserver(draw).observe(canvas); draw();
+    })();
+  </script>
+</body>
+</html>

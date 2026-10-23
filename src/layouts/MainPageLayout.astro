@@ -1,0 +1,64 @@
+---
+import Layout from '@layouts/Layout.astro';
+import Header from '@components/Header.astro';
+import Footer from '@components/Footer.astro';
+import Search from '@components/misc/Search.astro';
+
+
+interface Props {
+  title: string;
+  lang: string;
+  description?: string;
+  image?: string;
+  type?: 'website' | 'article';
+  publishedTime?: Date | string;
+  modifiedTime?: Date | string;
+  section?: string;
+  keywords?: string[];
+  noindex?: boolean;
+  structuredData?: Record<string, unknown> | Record<string, unknown>[];
+  /** 页面是否渲染 Markdown 正文（透传给 Layout，用于异步加载引用块字体） */
+  markdownFont?: boolean;
+}
+const {
+  title,
+  lang,
+  description,
+  image,
+  type,
+  publishedTime,
+  modifiedTime,
+  section,
+  keywords,
+  noindex,
+  structuredData,
+  markdownFont,
+} = Astro.props;
+
+---
+
+<Layout
+  title={title}
+  lang={lang}
+  description={description}
+  image={image}
+  type={type}
+  publishedTime={publishedTime}
+  modifiedTime={modifiedTime}
+  section={section}
+  keywords={keywords}
+  noindex={noindex}
+  structuredData={structuredData}
+  markdownFont={markdownFont}
+>
+  <div class="flex flex-col min-h-screen">
+    <div>
+      <Header />
+    </div>
+    <main class="flex-grow">
+      <slot />
+    </main>
+    <Footer />
+    <Search />
+  </div>
+</Layout>

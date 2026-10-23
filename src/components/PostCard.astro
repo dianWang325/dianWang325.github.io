@@ -1,0 +1,162 @@
+---
+import "@styles/global.css"
+import ImageModule from "./misc/ImageModule.astro";
+
+import type { CollectionEntry } from 'astro:content';
+import { render } from 'astro:content'
+
+import { getRelativeLocaleUrl } from '@utils/urlUtils';
+import { formatFullDate } from '@/utils/time'
+
+import { siteConfig } from '@/config';
+import { i18n } from "astro:config/client";
+import i18nit from '@i18n/translation'
+import { Icon } from "astro-icon/components";
+
+interface Props {
+    entry: CollectionEntry<'blog'>;
+    title: string;
+    description: string;
+    image: string;
+    pubDate: Date;
+    url: string;
+    fallback: boolean;
+    priority?: boolean;
+}
+
+const { entry, title, description, image, pubDate, url, fallback, priority = false } = Astro.props;
+
+const currentLang = Astro.currentLocale || i18n!.defaultLocale;
+const t = i18nit(currentLang);
+
+const pageUrl = getRelativeLocaleUrl(currentLang, "/blog/" + url);
+
+const { remarkPluginFrontmatter } = await render(entry);
+
+// 首页文章卡片封面图模式："background" 将图片作为卡片背景，从右向左渐隐
+const isBgMode = siteConfig.theme.postCard.imageMode === "background";
+---
+
+<div data-aos="fade-up"  class:list={["block min-w-0 w-full max-w-[var(--page-width)] mx-auto my-6  rounded-xl shadow border border-[var(--button-border-color)] overflow-hidden", isBgMode && "postcard-bg-mode", isBgMode && image && "has-image"]}>
+    {image && (
+        <>
+        {isBgMode ? (
+            <div class="bg-image">
+                <ImageModule src={image} alt={title} class="w-full h-full" priority={priority} />
+            </div>
+        ) : (
+            <a href={pageUrl} class="cover h-60 overflow-hidden hover-scale block">
+                <ImageModule src={image} alt={title} class="w-full h-full object-cover" priority={priority} />
+            </a>
+        )}
+        </>
+    )}
+    <div class="content p-6">
+        <a href={pageUrl} class="title text-xl font-semibold text-[var(--text-color)] mb-3 hover:text-[var(--link-color)] active:text-[var(--link-color)] flex items-center group transition-colors duration-300 ease-in-out">
+            <span class="flex items-center">
+                {entry.data.pinTop > 0 && <Icon name="fluent:pin-24-filled" class="mr-1" />} {title}
+            </span>
+            <Icon 
+                name="fa6-solid:angle-right" 
+                class="ml-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transform md:translate-x-[-5px] md:group-hover:translate-x-0 transition duration-300 ease-in-out text-[var(--text-color)] group-hover:text-[var(--link-color)] group-active:text-[var(--link-color)]"
+            />
+        </a>
+        <p class="description text-[var(--text-color-70)] leading-relaxed mt-2">
+            {
+                fallback && (
+                <span class="self-center px-1 mr-2 text-sm text-[var(--text-color-70)] font-mono uppercase bg-[var(--button-hover-color)] rounded border border-[var(--button-border-color)]">{i18n!.defaultLocale}</span>
+                )
+            }
+            {description}
+        </p>
+        <div class="flex items-center justify-start text-sm text-[var(--text-color-70)] mt-4 space-x-4">
+            <p class="pubdate flex items-center whitespace-nowrap">
+                <Icon name="fa6-solid:calendar-days" class="mr-1"></Icon> 
+                <span class="py-1 px-1">{formatFullDate(pubDate, currentLang)}</span>
+            </p>
+        </div>
+        <div class="flex flex-wrap items-center justify-start text-sm text-[var(--text-color-70)] mt-2 gap-2">
+            <p class="words flex items-center whitespace-nowrap mr-2">
+                <Icon name="fa6-solid:pen-nib" class="mr-1"></Icon> 
+                <span class="py-1 px-1">{remarkPluginFrontmatter.words || 0} {t("pagecard.words")}</span>
+            </p>
+            <p class="reading-time flex items-center whitespace-nowrap mr-2">
+                <Icon name="fa6-solid:clock" class="mr-1"></Icon> 
+                <span class="py-1 px-1">{remarkPluginFrontmatter.minutes || 0} {t("pagecard.minutes")}</span>
+            </p>
+            <p class="flex items-center whitespace-nowrap mr-2">
+                <Icon name="fa6-solid:hashtag" class="mr-1"></Icon> 
+                <a href={getRelativeLocaleUrl(currentLang, `/archives/?category=${entry.data.category}`)} class="category-tag">{entry.data.category || t("pagecard.uncategorized")}</a>
+            </p>
+        </div>
+    </div>
+</div>
+
+<style is:global>
+.hover-scale {
+  transition: transform 0.3s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.05);
+}
+.category-tag {
+  transition: all 0.3s ease;
+  background-color: transparent;
+  display: inline-block;
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.25rem; 
+}
+
+.category-tag:hover {
+  color: var(--link-color);
+  background-color: var(--button-hover-color);
+  text-shadow: 0.5px 0 0 currentColor, -0.5px 0 0 currentColor;
+}
+
+/* ===== 背景图模式：图片作为卡片背景，从右向左非线性渐隐 ===== */
+.postcard-bg-mode {
+  position: relative;
+}
+
+.postcard-bg-mode > .bg-image {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+}
+
+.postcard-bg-mode > .bg-image .image-wrapper {
+  width: 100%;
+  height: 100%;
+  opacity: 0.7; /* 图片整体保持一定透明度，避免与文字抢视觉 */
+  transition: transform 0.4s ease;
+  /* 桌面端：从右向左渐隐，约一半位置图片完全消失，多段渐变近似平滑（非线性）曲线 */
+  -webkit-mask-image: linear-gradient(to left, #000 0%, #000 35%, rgba(0,0,0,0.85) 44%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.15) 55%, transparent 60%, transparent 100%);
+          mask-image: linear-gradient(to left, #000 0%, #000 35%, rgba(0,0,0,0.85) 44%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.15) 55%, transparent 60%, transparent 100%);
+}
+
+.postcard-bg-mode:hover > .bg-image .image-wrapper {
+  transform: scale(1.03);
+}
+
+.postcard-bg-mode > .content {
+  position: relative;
+  z-index: 1;
+}
+
+/* 移动端：图片从上到下渐变、约一半位置消失，顶部留白展示图片，卡片整体加高 */
+@media (max-width: 640px) {
+  .postcard-bg-mode.has-image > .bg-image .image-wrapper {
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, rgba(0,0,0,0.85) 40%, rgba(0,0,0,0.5) 48%, rgba(0,0,0,0.15) 55%, transparent 60%, transparent 100%);
+            mask-image: linear-gradient(to bottom, #000 0%, #000 30%, rgba(0,0,0,0.85) 40%, rgba(0,0,0,0.5) 48%, rgba(0,0,0,0.15) 55%, transparent 60%, transparent 100%);
+  }
+
+  /* 顶部留白区域展示图片，文字从下方开始，卡片更高 */
+  .postcard-bg-mode.has-image > .content {
+    padding-top: 6rem;
+  }
+}
+</style>

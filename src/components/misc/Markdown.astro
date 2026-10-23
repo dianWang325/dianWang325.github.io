@@ -1,0 +1,241 @@
+---
+import { siteConfig } from '@/config'
+import ImageLightbox from './ImageLightbox.astro'
+// KaTeX 只用在正文公式上，放在这里可以避免每个页面都为它付出约 23 KB 的阻塞 CSS
+import 'katex/dist/katex.min.css'
+import '@fontsource-variable/jetbrains-mono'
+import '@fontsource-variable/jetbrains-mono/wght-italic.css'
+import '@styles/markdown.css'
+
+interface Props {
+  class?: string
+}
+const className = Astro.props.class
+---
+<div data-pagefind-body class=`markdown-content ${className}`>
+    <slot/>
+</div>
+
+<script>
+  function setupSpoilers() {
+    const spoilers = document.querySelectorAll('.spoiler');
+    
+    spoilers.forEach(el => {
+      // 幂等守卫：同一个元素只绑定一次
+      // （原实现既在模块顶层调用又监听了 astro:page-load，首屏就会绑两份）
+      if (el.dataset.spoilerBound === '1') return;
+      el.dataset.spoilerBound = '1';
+
+      let timeoutId = null;
+      let clickTime = 0;
+      let scrollHandler = null;
+
+      const removeScrollHandler = () => {
+        if (scrollHandler) {
+          window.removeEventListener('scroll', scrollHandler);
+          scrollHandler = null;
+        }
+      };
+
+      el.addEventListener('click', () => {
+        el.classList.add('revealed');
+        clickTime = Date.now();
+
+        if (timeoutId) clearTimeout(timeoutId);
+        removeScrollHandler();
+
+        const isMobile = window.innerWidth < 776;
+
+        if (!isMobile) {
+          // --- 桌面端逻辑：保持原样，3秒后自动模糊 ---
+          timeoutId = setTimeout(() => {
+            el.classList.remove('revealed');
+          }, 3000);
+        } else {
+          // --- 移动端逻辑 (< 776px) ---
+          // 只有满足两个条件：1. 发生滚动 2. 距离点击已过3秒
+          scrollHandler = () => {
+            const timeElapsed = Date.now() - clickTime;
+            
+            if (timeElapsed >= 3000) {
+              el.classList.remove('revealed');
+              removeScrollHandler();
+            }
+          };
+
+          window.addEventListener('scroll', scrollHandler, { passive: true });
+        }
+      });
+    });
+  }
+
+  // astro:page-load 在首次加载时也会触发，不需要在模块顶层再调用一次
+  document.addEventListener('astro:page-load', setupSpoilers);
+
+  // LQIP 图片的淡入：关闭 LQIP 时插件不会输出 .lqip-markdown-img，这里自然就是空操作，
+  // 因此不需要再按 siteConfig.theme.LQIP 拆成另一个 <script>（少一个内联脚本）
+  function handleLqipImages() {
+    const lqipImages = document.querySelectorAll('.lqip-markdown-img');
+    lqipImages.forEach(img => {
+      if (img.complete) {
+        img.classList.add('lqip-loaded');
+      } else {
+        img.addEventListener('load', () => {
+          img.classList.add('lqip-loaded');
+        });
+        img.addEventListener('error', () => {
+          img.classList.add('lqip-loaded');
+        });
+      }
+    });
+  }
+
+  document.addEventListener('astro:page-load', handleLqipImages);
+</script>
+
+<style is:global>
+  /* 代码块的复制按钮 / 可折叠段落 / 语法高亮均由 Expressive Code 提供
+     （astro-expressive-code 集成 + src/config.ts 的 expressiveCode 开关与根目录 ec.config.mjs，
+     CSS 与 JS 会随代码块自动注入；关闭 expressiveCode 后代码块回退为 markdown.css 里的纯文本样式） */
+  pre {
+    overflow-x: auto;
+  }
+</style>
+
+<style is:global>
+  .markdown-content section[data-footnotes] .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .markdown-content section[data-footnotes] a[data-footnote-backref]::before {
+    content: none !important;
+    display: none !important;
+    border: none !important;
+  }
+
+  .markdown-content section[data-footnotes] {
+    margin-top: 3rem;       
+    padding-top: 1.5rem;    
+    border-top: 1px dashed var(--button-border-color); 
+    color: var(--text-color-70);         
+    font-size: 0.875rem;    
+  }
+
+  .markdown-content section[data-footnotes] ol {
+    list-style: none; 
+    counter-reset: footnote-counter;
+    padding-left: 0;        
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0; 
+  }
+
+  .markdown-content section[data-footnotes] li {
+    counter-increment: footnote-counter; 
+    line-height: 1.6;
+    display: flex !important;
+    align-items: flex-start; 
+    position: relative !important; 
+  }
+
+  .markdown-content section[data-footnotes] li::before {
+    content: "[" counter(footnote-counter) "]" !important; 
+    display: inline-block !important;
+    font-weight: 600;      
+    color: var(--link-color); 
+    width: 2rem;
+    flex-shrink: 0;  
+    text-align: left; 
+    margin: 0 !important; 
+    transform: none !important; 
+  }
+
+  .markdown-content section[data-footnotes] li p {
+    display: inline !important; 
+    margin: 0 !important;
+    position: static !important; 
+  }
+
+  .markdown-content section[data-footnotes] a[data-footnote-backref] {
+    display: inline-block !important;
+    position: static !important; 
+    color: var(--link-color) !important;
+    text-decoration: none !important;
+    margin-left: 0;
+    transition: transform 0.2s ease;
+  }
+
+  .markdown-content section[data-footnotes] a[data-footnote-backref]:hover {
+    color: var(--link-color) !important;
+    transform: translateX(-2px);
+  }
+
+  @keyframes highlight-fade {
+    0% {
+      background-color: var(--link-color); 
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  .markdown-content section[data-footnotes] li:target {
+    animation: highlight-fade 2s ease-out;
+    border-radius: 4px;
+  }
+  .markdown-content sup a[data-footnote-ref]::before,
+  .markdown-content sup a[data-footnote-ref]::after {
+    content: none; 
+    display: inline;
+    position: static;
+    border: none;
+    transform: none;
+  }
+
+  .markdown-content sup a[data-footnote-ref] {
+    display: inline !important; 
+    position: static !important; 
+    color: var(--link-color) !important; 
+    font-size: 0.75rem; 
+    font-weight: 600; 
+    padding: 0 1px; 
+    text-decoration: none !important;
+    transition: color 0.2s ease;
+  }
+
+  .markdown-content sup a[data-footnote-ref]::before {
+    content: "[" !important;
+    display: inline !important;
+    color: var(--link-color) !important; 
+    margin-right: 1px;
+  }
+
+  .markdown-content sup a[data-footnote-ref]::after {
+    content: "]" !important;
+    display: inline !important;
+    color: var(--link-color) !important;
+    margin-left: 1px;
+  }
+
+  .markdown-content sup a[data-footnote-ref]:hover {
+    filter: brightness(0.8) !important; 
+  }
+
+  .markdown-content p:has(sup a[data-footnote-ref]:target), 
+  .markdown-content sup a[data-footnote-ref]:target {
+    animation: highlight-fade 2s ease-out;
+    border-radius: 4px;
+  }
+</style>
+
+
+{ siteConfig.theme.PhotoSwipe && <ImageLightbox /> }
