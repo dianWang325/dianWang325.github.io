@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 660" role="img" aria-labelledby="title desc">
+  <title id="title">GLM 5.3 与 GLM 5.3 Flash 架构对比</title>
+  <desc id="desc">两列展示输入、隐藏维度、Attention、FFN 和输出。GLM 5.3 为 78 层文本模型，Flash 为带视觉编码器及四路 mHC 的 45 层混合模型。Attention 和 FFN 属于同一 Decoder 层。</desc>
+  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#526279"/></marker></defs>
+  <style>
+    text{font-family:"Noto Sans SC","Microsoft YaHei",sans-serif;fill:#182b41;text-anchor:middle;font-size:18px}
+    .heading{font-size:26px;font-weight:600}.small{font-size:16px;fill:#43556a}
+    .box{fill:#edf4fb;stroke:#b5c9de;stroke-width:1.2}.flash{fill:#edf8f4;stroke:#a7cabc;stroke-width:1.2}
+    .flow{stroke:#526279;stroke-width:1.5;fill:none;marker-end:url(#arrow)}
+  </style>
+  <rect width="880" height="660" rx="16" fill="#fafcfe"/>
+  <text x="230" y="44" class="heading">GLM 5.3</text><text x="650" y="44" class="heading">GLM 5.3 Flash</text>
+  <text x="230" y="74" class="small">沿用 GLM 5.2 底座</text><text x="650" y="74" class="small">重新训练的多模态底座</text>
+  <rect x="60" y="100" width="340" height="70" rx="10" class="box"/><text x="230" y="142">文本 Token</text>
+  <rect x="480" y="100" width="340" height="70" rx="10" class="flash"/><text x="650" y="130">文本 + 图像 / 视频</text><text x="650" y="155" class="small">视觉编码器 24 层 → 投影</text>
+  <path d="M230 170V195M650 170V195" class="flow"/>
+  <rect x="60" y="200" width="340" height="60" rx="10" class="box"/><text x="230" y="237">隐藏维度 6144</text>
+  <rect x="480" y="200" width="340" height="60" rx="10" class="flash"/><text x="650" y="237">隐藏维度 4096 · 四路 mHC</text>
+  <path d="M230 260V285M650 260V285" class="flow"/>
+  <rect x="60" y="290" width="340" height="100" rx="10" class="box"/><text x="230" y="322">78 层 Decoder · Attention</text><text x="230" y="352">DSA 稀疏注意力</text><text x="230" y="377" class="small">IndexShare 跨层复用索引</text>
+  <rect x="480" y="290" width="340" height="100" rx="10" class="flash"/><text x="650" y="322">45 层 Decoder · Attention</text><text x="650" y="352">34 层线性 + 11 层 DSA</text><text x="650" y="377" class="small">[线性 × 3 → DSA] × 11 + 线性</text>
+  <path d="M230 390V415M650 390V415" class="flow"/>
+  <rect x="60" y="420" width="340" height="100" rx="10" class="box"/><text x="230" y="452">各层 FFN</text><text x="230" y="482">3 层 Dense + 75 层 MoE</text><text x="230" y="507" class="small">256 选 8 + 1 个共享专家</text>
+  <rect x="480" y="420" width="340" height="100" rx="10" class="flash"/><text x="650" y="452">各层 FFN</text><text x="650" y="482">3 层 Dense + 42 层 MoE</text><text x="650" y="507" class="small">288 选 8 + 1 个共享专家</text>
+  <path d="M230 520V545M650 520V545" class="flow"/>
+  <text x="230" y="575">输出文本</text><text x="650" y="575">收拢多路状态 → 输出文本</text>
+  <text x="440" y="620" class="small">结构分组示意：每个 Decoder 层依次执行 Attention 与 FFN；省略归一化等细节。</text>
+</svg>

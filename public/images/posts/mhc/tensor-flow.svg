@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-labelledby="title desc">
+  <title id="title">四路 mHC 张量形状与计算流程</title>
+  <desc id="desc">输入形状 B T 4 C。读取权重将四路组合为 B T C，执行一次 Attention 或 FFN，再由写回权重恢复四路。另一分支通过四乘四双随机矩阵混合旧状态。两条分支相加，输出形状仍为 B T 4 C。</desc>
+  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#526279"/></marker></defs>
+  <style>
+    text{font-family:"Noto Sans SC","Microsoft YaHei",sans-serif;fill:#182b41;text-anchor:middle;font-size:20px}
+    .heading{font-size:26px;font-weight:600}.small{font-size:17px;fill:#43556a}.shape{font-family:Consolas,monospace;font-size:20px}
+    .box{fill:#edf4fb;stroke:#b5c9de;stroke-width:1.2}.mix{fill:#edf8f4;stroke:#a7cabc;stroke-width:1.2}
+    .flow{stroke:#526279;stroke-width:1.8;fill:none;marker-end:url(#arrow)}
+  </style>
+  <rect width="800" height="800" rx="16" fill="#fafcfe"/>
+  <text x="400" y="45" class="heading">mHC · 一次子层更新</text>
+  <rect x="230" y="75" width="340" height="90" rx="10" class="box"/>
+  <text x="400" y="112">同一个 Token 的四路状态 X</text><text x="400" y="144" class="shape">[B, T, 4, C]</text>
+  <path d="M320 165V197H210V230M490 165V197H620V350" class="flow"/>
+  <rect x="50" y="235" width="320" height="85" rx="10" class="box"/><text x="210" y="269">读取 · 四路加权合成一路</text><text x="210" y="302" class="shape">H_pre X → [B, T, C]</text>
+  <path d="M210 320V355" class="flow"/>
+  <rect x="50" y="360" width="320" height="85" rx="10" class="box"/><text x="210" y="394">执行一次 Attention / FFN</text><text x="210" y="427" class="shape">u = F(z) → [B, T, C]</text>
+  <rect x="450" y="355" width="300" height="145" rx="10" class="mix"/><text x="600" y="390">残差混合 R · [4, 4]</text><text x="600" y="424" class="small">非负 · 行和、列和均约为 1</text><text x="600" y="459" class="shape">RX → [B, T, 4, C]</text><text x="600" y="485" class="small">混合流维度，保留状态形状</text>
+  <path d="M210 445V480" class="flow"/>
+  <rect x="50" y="485" width="320" height="85" rx="10" class="box"/><text x="210" y="519">写回 · 子层输出分配到四路</text><text x="210" y="552" class="shape">b u → [B, T, 4, C]</text>
+  <path d="M210 570V620H360M600 500V620H440" class="flow"/>
+  <circle cx="400" cy="620" r="30" fill="#edf4fb" stroke="#b5c9de"/><text x="400" y="628">+</text>
+  <path d="M400 650V680" class="flow"/>
+  <text x="400" y="714">下一子层的四路状态</text><text x="400" y="746" class="shape">X_next = RX + b F(H_pre X)</text>
+  <text x="400" y="780" class="small">图中省略由 X 生成连接权重的分支；C = 4096 时仍沿用相同形状关系。</text>
+</svg>
